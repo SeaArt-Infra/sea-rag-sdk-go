@@ -1,0 +1,4 @@
+interface:
+  display_name: "SeaRAG Go SDK"
+  short_description: "Integrate Go services with SeaArt RAG APIs."
+  default_prompt: "Use $sea-rag-sdk-go to integrate a Go service with SeaArt RAG APIs."
