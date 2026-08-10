@@ -18,7 +18,10 @@ import (
 	"unicode/utf8"
 )
 
-const defaultHTTPTimeout = 180 * time.Second
+const (
+	defaultHTTPTimeout = 180 * time.Second
+	projectIDHeader    = "X-Project-ID"
+)
 
 // Transport is the shared HTTP implementation used by each resource.
 type Transport struct {
@@ -48,6 +51,7 @@ func NewTransport(endpoint, apiKey string, headers map[string]string, httpClient
 	for key, value := range headers {
 		copyHeaders[key] = value
 	}
+	copyHeaders = withProjectIDHeader(copyHeaders, projectIDFromHeaders(copyHeaders))
 
 	if httpClient != nil {
 		return &Transport{
@@ -93,9 +97,21 @@ func (t *Transport) RequestJSON(ctx context.Context, method, path string, query 
 }
 
 func (t *Transport) PostMultipart(ctx context.Context, path string, fields map[string]string, files []UploadFile, out any) error {
+	requestFields := make(map[string]string, len(fields)+1)
+	for key, value := range fields {
+		requestFields[key] = value
+	}
+	projectID := projectIDFromHeaders(t.headers)
+	if projectID == "" {
+		projectID = strings.TrimSpace(requestFields["project_id"])
+	}
+	if projectID != "" {
+		requestFields["project_id"] = projectID
+	}
+
 	var payload bytes.Buffer
 	writer := multipart.NewWriter(&payload)
-	for key, value := range fields {
+	for key, value := range requestFields {
 		if err := writer.WriteField(key, value); err != nil {
 			return err
 		}
@@ -116,9 +132,11 @@ func (t *Transport) PostMultipart(ctx context.Context, path string, fields map[s
 		return err
 	}
 
-	return t.requestJSON(ctx, t.httpClient, http.MethodPost, path, nil, &payload, map[string]string{
-		"Content-Type": writer.FormDataContentType(),
-	}, out)
+	extraHeaders := map[string]string{"Content-Type": writer.FormDataContentType()}
+	if projectID != "" {
+		extraHeaders[projectIDHeader] = projectID
+	}
+	return t.requestJSON(ctx, t.httpClient, http.MethodPost, path, nil, &payload, extraHeaders, out)
 }
 
 // PostStream sends an SSE-compatible request and forwards raw response chunks.
@@ -219,8 +237,14 @@ func (t *Transport) newRequest(ctx context.Context, method, path string, query Q
 		return nil, err
 	}
 
-	var reader io.Reader
 	hasBody := body != nil
+	requestHeaders := t.BuildHeaders(accept, hasBody, extraHeaders)
+	body, requestHeaders, err = prepareProjectJSONRequest(body, requestHeaders)
+	if err != nil {
+		return nil, err
+	}
+
+	var reader io.Reader
 	if body != nil {
 		if bodyReader, ok := body.(io.Reader); ok {
 			reader = bodyReader
@@ -237,7 +261,7 @@ func (t *Transport) newRequest(ctx context.Context, method, path string, query Q
 	if err != nil {
 		return nil, err
 	}
-	for key, value := range t.BuildHeaders(accept, hasBody, extraHeaders) {
+	for key, value := range requestHeaders {
 		request.Header.Set(key, value)
 	}
 	if isDebugEnabled() {
@@ -291,6 +315,61 @@ func (t *Transport) BuildHeaders(accept string, hasBody bool, requestHeaders map
 		headers["Authorization"] = "Bearer " + t.apiKey
 	}
 	return headers
+}
+
+func prepareProjectJSONRequest(body any, headers map[string]string) (any, map[string]string, error) {
+	if body == nil {
+		return body, headers, nil
+	}
+	if _, ok := body.(io.Reader); ok {
+		return body, headers, nil
+	}
+
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return nil, nil, err
+	}
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return body, headers, nil
+	}
+
+	projectID := projectIDFromHeaders(headers)
+	if projectID == "" {
+		if value, ok := object["project_id"].(string); ok {
+			projectID = strings.TrimSpace(value)
+		}
+	}
+	if projectID == "" {
+		return body, headers, nil
+	}
+	object["project_id"] = projectID
+	return object, withProjectIDHeader(headers, projectID), nil
+}
+
+func projectIDFromHeaders(headers map[string]string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, projectIDHeader) {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func withProjectIDHeader(headers map[string]string, projectID string) map[string]string {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return headers
+	}
+
+	result := make(map[string]string, len(headers)+1)
+	for key, value := range headers {
+		if !strings.EqualFold(key, projectIDHeader) {
+			result[key] = value
+		}
+	}
+	result[projectIDHeader] = projectID
+	return result
 }
 
 // NormalizeRAGEndpoint appends /rag once while preserving a base path and query.

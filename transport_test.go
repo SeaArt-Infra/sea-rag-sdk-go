@@ -51,6 +51,62 @@ func TestBuildURLAndHeaders(t *testing.T) {
 	}
 }
 
+func TestProjectHeaderIsSentInHeaderAndJSONBody(t *testing.T) {
+	var receivedHeaders http.Header
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		receivedHeaders = request.Header.Clone()
+		if err := json.NewDecoder(request.Body).Decode(&receivedBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = writer.Write([]byte(`{"code":0,"data":{"chunks":[]}}`))
+	}))
+	defer server.Close()
+
+	payload := map[string]any{"question": "hello"}
+	client := NewClient(ClientOptions{
+		Endpoint: server.URL,
+		Headers:  map[string]string{projectIDHeader: "project_1"},
+	})
+	if _, err := client.Retrieval.Search(context.Background(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := receivedHeaders.Get(projectIDHeader); got != "project_1" {
+		t.Fatalf("%s = %q, want project_1", projectIDHeader, got)
+	}
+	if got := receivedBody["project_id"]; got != "project_1" {
+		t.Fatalf("project_id = %#v, want project_1", got)
+	}
+	if _, exists := payload["project_id"]; exists {
+		t.Fatalf("payload was mutated: %#v", payload)
+	}
+}
+
+func TestProjectIDInJSONBodyAddsHeader(t *testing.T) {
+	var receivedHeaders http.Header
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		receivedHeaders = request.Header.Clone()
+		if err := json.NewDecoder(request.Body).Decode(&receivedBody); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = writer.Write([]byte(`{"code":0,"data":{"chunks":[]}}`))
+	}))
+	defer server.Close()
+
+	payload := map[string]any{"question": "hello", "project_id": "project_1"}
+	client := NewClient(ClientOptions{Endpoint: server.URL})
+	if _, err := client.Retrieval.Search(context.Background(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := receivedHeaders.Get(projectIDHeader); got != "project_1" {
+		t.Fatalf("%s = %q, want project_1", projectIDHeader, got)
+	}
+	if got := receivedBody["project_id"]; got != "project_1" {
+		t.Fatalf("project_id = %#v, want project_1", got)
+	}
+}
+
 func TestDefaultHTTPClientsUseExpectedTimeouts(t *testing.T) {
 	transport := NewTransport("http://127.0.0.1:8080", "", nil, nil)
 	if transport.httpClient.Timeout != 180*time.Second {
