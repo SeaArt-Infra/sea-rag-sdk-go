@@ -107,6 +107,32 @@ func TestProjectIDInJSONBodyAddsHeader(t *testing.T) {
 	}
 }
 
+func TestExistingProjectHeaderIsAddedToMultipartBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if got := request.Header.Get(projectIDHeader); got != "legacy-project" {
+			t.Fatalf("%s = %q, want legacy-project", projectIDHeader, got)
+		}
+		if err := request.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatal(err)
+		}
+		if got := request.FormValue("project_id"); got != "legacy-project" {
+			t.Fatalf("project_id = %q, want legacy-project", got)
+		}
+		_, _ = writer.Write([]byte(`{"code":0,"data":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOptions{
+		Endpoint: server.URL,
+		Headers:  map[string]string{"x-project-id": "legacy-project"},
+	})
+	if _, err := client.Documents.Upload(context.Background(), "kb_1", []UploadFile{{
+		Name: "notes.txt", Reader: strings.NewReader("rag content"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDefaultHTTPClientsUseExpectedTimeouts(t *testing.T) {
 	transport := NewTransport("http://127.0.0.1:8080", "", nil, nil)
 	if transport.httpClient.Timeout != 180*time.Second {
