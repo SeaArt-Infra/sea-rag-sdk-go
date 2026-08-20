@@ -86,6 +86,25 @@ func (r *DocumentsResource) Upload(ctx context.Context, datasetID string, files 
 	return multipartRAG[[]Document](ctx, r.transport, apiPrefix+"/datasets/"+urlEscape(datasetID)+"/documents", files)
 }
 
+// UploadFromURL crawls a web page and creates a document in the dataset.
+// Start parsing and wait for completion before retrieving from the document.
+func (r *DocumentsResource) UploadFromURL(ctx context.Context, datasetID, name, sourceURL string) (RAGResponse[Document], error) {
+	return multipartRAGWithOptions[Document](
+		ctx,
+		r.transport,
+		apiPrefix+"/datasets/"+urlEscape(datasetID)+"/documents",
+		QueryParams{"type": "web"},
+		map[string]string{"name": name, "url": sourceURL},
+		nil,
+	)
+}
+
+// UploadInfoFromURL crawls a URL into an attachment without creating a dataset
+// document. Use UploadFromURL when the content should be parsed and indexed.
+func (r *DocumentsResource) UploadInfoFromURL(ctx context.Context, sourceURL string) (RAGResponse[UploadedFile], error) {
+	return requestRAG[UploadedFile](ctx, r.transport, http.MethodPost, apiPrefix+"/documents/upload", QueryParams{"url": sourceURL}, nil)
+}
+
 func (r *DocumentsResource) List(ctx context.Context, datasetID string, options DocumentListOptions) (RAGResponse[DocumentList], error) {
 	return requestRAG[DocumentList](ctx, r.transport, http.MethodGet, apiPrefix+"/datasets/"+urlEscape(datasetID)+"/documents", QueryParams{
 		"page":             options.Page,
@@ -289,8 +308,12 @@ func requestRAG[T any](ctx context.Context, transport *Transport, method, path s
 }
 
 func multipartRAG[T any](ctx context.Context, transport *Transport, path string, files []UploadFile) (RAGResponse[T], error) {
+	return multipartRAGWithOptions[T](ctx, transport, path, nil, nil, files)
+}
+
+func multipartRAGWithOptions[T any](ctx context.Context, transport *Transport, path string, query QueryParams, fields map[string]string, files []UploadFile) (RAGResponse[T], error) {
 	var response RAGResponse[T]
-	err := transport.PostMultipart(ctx, path, nil, files, &response)
+	err := transport.postMultipart(ctx, path, query, fields, files, &response)
 	return response, err
 }
 

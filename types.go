@@ -53,6 +53,19 @@ type UploadFile struct {
 	Reader io.Reader
 }
 
+// UploadedFile is an attachment created by Documents.UploadInfoFromURL.
+// It is not a dataset document and has not been parsed or indexed.
+type UploadedFile struct {
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	Size       int64   `json:"size"`
+	Extension  string  `json:"extension"`
+	MIMEType   string  `json:"mime_type"`
+	CreatedBy  string  `json:"created_by"`
+	CreatedAt  float64 `json:"created_at"`
+	PreviewURL string  `json:"preview_url"`
+}
+
 type Dataset struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
