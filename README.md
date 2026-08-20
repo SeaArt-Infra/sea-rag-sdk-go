@@ -7,7 +7,7 @@ Go SDK for SeaArt RAG. It wraps the RAGFlow REST API through the SeaArt gateway,
 | Resource | Client field | Function |
 | --- | --- | --- |
 | Datasets | `client.Datasets` | Create, list, get, update, and delete datasets |
-| Documents | `client.Documents` | Upload, list, update, parse, stop, delete, and download documents |
+| Documents | `client.Documents` | Upload files or URLs; list, update, parse, stop, delete, and download documents |
 | Chunks | `client.Chunks` | Start or cancel parsing and manage document chunks |
 | Retrieval | `client.Retrieval` | Retrieve grounded chunks from one or more datasets |
 | Chat | `client.Chat` | Manage chat assistants and run JSON or streaming completions |
@@ -107,6 +107,31 @@ if err != nil {
 Use `client.Documents.Parse` and `client.Documents.Stop` for the newer document parse endpoints. Use `client.Chunks.StartParsing` and `client.Chunks.CancelParsing` for the RAGFlow-compatible chunk parse endpoints.
 
 Parsing is asynchronous. Call `client.Documents.WaitForParsed` before retrieval; it polls the uploaded document every second by default and waits for up to 15 minutes. It returns a typed `Document` on `DONE`, returns `*searagsdk.ParsingFailedError` on `CANCEL` or `FAIL`, and returns `*searagsdk.ParsingTimeoutError` on timeout. `WaitForParsedOptions.OnProgress` receives every observed document state.
+
+## Ingest From URL
+
+Use `Documents.UploadFromURL` to crawl one HTTP(S) web page into a dataset. It creates a PDF-backed document with an unstarted parse job, so start parsing and call `WaitForParsed` before retrieval.
+
+```go
+uploaded, err := client.Documents.UploadFromURL(
+	ctx,
+	datasetID,
+	"example-page",
+	"https://example.com/page",
+)
+if err != nil {
+	panic(err)
+}
+
+if _, err = client.Documents.Parse(ctx, datasetID, []string{uploaded.Data.ID}); err != nil {
+	panic(err)
+}
+if _, err = client.Documents.WaitForParsed(ctx, datasetID, uploaded.Data.ID, searagsdk.WaitForParsedOptions{}); err != nil {
+	panic(err)
+}
+```
+
+`Documents.UploadInfoFromURL(ctx, sourceURL)` calls `/api/v1/documents/upload?url=...` and returns an `UploadedFile` attachment only. It does not create a dataset document or trigger parsing. RAGFlow does not automatically persist the source URL for retrieval; set document metadata such as `{"url": "https://example.com/page"}` when the source URL must be returned with references.
 
 ## Retrieve And Manage Chunks
 
@@ -251,6 +276,12 @@ func main() {
 ```
 
 `WaitForParsed` polls every second by default for up to 15 minutes. It returns a typed `Document` on `DONE`, calls `OnProgress` for every observed document state, returns `*ParsingFailedError` for `CANCEL` or `FAIL`, and returns `*ParsingTimeoutError` on timeout. RAGFlow normalizes its state as `UNSTART`, `RUNNING`, `CANCEL`, `DONE`, or `FAIL`.
+
+## URL Ingestion
+
+Use `client.Documents.UploadFromURL(ctx, datasetID, name, sourceURL)` to crawl an HTTP(S) web page into a dataset. It returns an unstarted `Document`; call `client.Documents.Parse` or `client.Chunks.StartParsing`, then `WaitForParsed` before retrieval.
+
+Use `client.Documents.UploadInfoFromURL(ctx, sourceURL)` only when an attachment is needed. It does not create a dataset document or index content. RAGFlow does not automatically return the original source URL during retrieval; store it as document metadata when references need it.
 
 ## Other Resources
 

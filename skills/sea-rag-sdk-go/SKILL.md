@@ -86,6 +86,12 @@ func main() {
 
 `WaitForParsed` polls every second by default for up to 15 minutes. It returns a typed `Document` on `DONE`, calls `OnProgress` for every observed document state, returns `*ParsingFailedError` for `CANCEL` or `FAIL`, and returns `*ParsingTimeoutError` on timeout. RAGFlow normalizes its state as `UNSTART`, `RUNNING`, `CANCEL`, `DONE`, or `FAIL`.
 
+## URL Ingestion
+
+Use `client.Documents.UploadFromURL(ctx, datasetID, name, sourceURL)` to crawl an HTTP(S) web page into a dataset. It returns an unstarted `Document`; call `client.Documents.Parse` or `client.Chunks.StartParsing`, then `WaitForParsed` before retrieval.
+
+Use `client.Documents.UploadInfoFromURL(ctx, sourceURL)` only when an attachment is needed. It does not create a dataset document or index content. RAGFlow does not automatically return the original source URL during retrieval; store it as document metadata when references need it.
+
 ## Other Resources
 
 Use `client.Documents.Parse` and `Stop` for newer document parse endpoints. Use `client.Chunks.CancelParsing` to cancel compatible chunk parsing. Use `client.Chunks.List`, `Get`, `Create`, `Update`, and `Delete` for curation; `client.Chat.Complete` or `Stream` for configured chat assistants; and `client.Raw.Request(ctx, method, "/api/v1/...", query, body)` for an uncovered RAGFlow API.

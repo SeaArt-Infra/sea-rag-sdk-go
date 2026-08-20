@@ -97,6 +97,10 @@ func (t *Transport) RequestJSON(ctx context.Context, method, path string, query 
 }
 
 func (t *Transport) PostMultipart(ctx context.Context, path string, fields map[string]string, files []UploadFile, out any) error {
+	return t.postMultipart(ctx, path, nil, fields, files, out)
+}
+
+func (t *Transport) postMultipart(ctx context.Context, path string, query QueryParams, fields map[string]string, files []UploadFile, out any) error {
 	requestFields := make(map[string]string, len(fields)+1)
 	for key, value := range fields {
 		requestFields[key] = value
@@ -136,7 +140,7 @@ func (t *Transport) PostMultipart(ctx context.Context, path string, fields map[s
 	if projectID != "" {
 		extraHeaders[projectIDHeader] = projectID
 	}
-	return t.requestJSON(ctx, t.httpClient, http.MethodPost, path, nil, &payload, extraHeaders, out)
+	return t.requestJSON(ctx, t.httpClient, http.MethodPost, path, query, &payload, extraHeaders, out)
 }
 
 // PostStream sends an SSE-compatible request and forwards raw response chunks.

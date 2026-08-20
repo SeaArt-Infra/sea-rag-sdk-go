@@ -211,6 +211,62 @@ func TestDocumentUploadDecodesNormalizedResponse(t *testing.T) {
 	}
 }
 
+func TestDocumentUploadFromURLUsesWebImportEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/rag/api/v1/datasets/kb_1/documents" {
+			t.Fatalf("path = %s", request.URL.Path)
+		}
+		if request.URL.Query().Get("type") != "web" {
+			t.Fatalf("type = %q", request.URL.Query().Get("type"))
+		}
+		if err := request.ParseMultipartForm(1024 * 1024); err != nil {
+			t.Fatal(err)
+		}
+		if got := request.MultipartForm.Value["name"]; len(got) != 1 || got[0] != "example-page" {
+			t.Fatalf("name = %#v", got)
+		}
+		if got := request.MultipartForm.Value["url"]; len(got) != 1 || got[0] != "https://example.com/page" {
+			t.Fatalf("url = %#v", got)
+		}
+		if got := request.MultipartForm.File["file"]; len(got) != 0 {
+			t.Fatalf("files = %#v", got)
+		}
+		_, _ = writer.Write([]byte(`{"code":0,"data":{"id":"doc_1","name":"example-page.pdf","run":"0"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOptions{Endpoint: server.URL})
+	response, err := client.Documents.UploadFromURL(context.Background(), "kb_1", "example-page", "https://example.com/page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.Success() || response.Data.ID != "doc_1" || response.Data.Run != ParsingStatusUnstarted {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestDocumentUploadInfoFromURLUsesAttachmentEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/rag/api/v1/documents/upload" {
+			t.Fatalf("path = %s", request.URL.Path)
+		}
+		if request.URL.Query().Get("url") != "https://example.com/page" {
+			t.Fatalf("url = %q", request.URL.Query().Get("url"))
+		}
+		_, _ = writer.Write([]byte(`{"code":0,"data":{"id":"file_1","name":"page.pdf","extension":"pdf","mime_type":"application/pdf"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientOptions{Endpoint: server.URL})
+	response, err := client.Documents.UploadInfoFromURL(context.Background(), "https://example.com/page")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.Success() || response.Data.ID != "file_1" || response.Data.MIMEType != "application/pdf" {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
 func TestWaitForParsedNormalizesTerminalStates(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
